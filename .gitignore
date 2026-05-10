@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+runs/
+logs/
+*.pt
+*.nii.gz
+.DS_Store
+*.db
+data/Incidental Findings/
+data/labels_full.csv
+data/manifest.csv
