@@ -9,10 +9,10 @@ Convention : `commande fixe` `<a remplacer>` — les `<>` sont toujours a rempla
 ```
 CONNEXION & ENV
   ssh <user>@<host>                                 Connexion cluster          ex: ssh lbardou@hpc-login
-  source ~/leuko.../activate_env.sh                 Activer Python + CUDA
+  source /mnt/fac/CX500007_DS1/bardou/WMA/activate_env.sh                 Activer Python + CUDA
 
 TRANSFERT
-  rsync -avzP <src> <user>@<host>:<dst>             Envoyer vers cluster       ex: rsync -avzP data/ lbardou@hpc:~/WMA/data/
+  rsync -avzP <src> <user>@<host>:<dst>             Envoyer vers cluster       ex: rsync -avzP data/ lbardou@hpc:/mnt/fac/CX500007_DS1/bardou/WMA/data/
   rsync -avzP <user>@<host>:<src> <dst>             Recuperer du cluster       ex: rsync -avzP lbardou@hpc:~/runs/best.pt .
 
 PIPELINE (dans WMA/)
@@ -63,7 +63,7 @@ ssh <user>@<login-node>
 #     <login-node> : adresse du login node
 
 # Activer l'environnement Python + CUDA
-source ~/WMA/activate_env.sh
+source /mnt/fac/CX500007_DS1/bardou/WMA/activate_env.sh
 ```
 
 ---
@@ -74,11 +74,11 @@ source ~/WMA/activate_env.sh
 # Envoyer des fichiers locaux vers le cluster
 rsync -avzP <fichier_local> <user>@<login-node>:<chemin_distant>
 #     <fichier_local>  : chemin sur ta machine (ex: data/labels.csv)
-#     <chemin_distant>  : destination sur le cluster (ex: ~/leukoaraiosis-detection/WMA/data/)
+#     <chemin_distant>  : destination sur le cluster (ex: /mnt/fac/CX500007_DS1/bardou/WMA/data/)
 
 # Recuperer des fichiers du cluster vers local
 rsync -avzP <user>@<login-node>:<chemin_distant> <dossier_local>
-#     <chemin_distant>  : fichier sur le cluster (ex: ~/leuko_runs/wma_fold0/best_model.pt)
+#     <chemin_distant>  : fichier sur le cluster (ex: /mnt/scratch/user/lbardou/wma_runs/fold0_*/best_model.pt)
 #     <dossier_local>   : destination locale (ex: ./results/)
 
 # Synchroniser un dossier entier

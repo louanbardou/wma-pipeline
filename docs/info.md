@@ -41,7 +41,7 @@ Dataset: 2 717 subjects, 8 947 sessions, 739 WMA+ (8.3%), 262 unique WMA+ subjec
 
 | Path | Content |
 |---|---|
-| `~/leukoaraiosis-detection/WMA/` | Pipeline code + data + jobs |
+| `/mnt/fac/CX500007_DS1/bardou/WMA/` | Pipeline code + data + jobs |
 | `/mnt/scratch/user/lbardou/abcd_leuko/` | NIfTI data (`$ABCD_IMAGING`): `sub-*/ses-*/anat/*_{T1w,T2w}.nii.gz` |
 | `/mnt/scratch/user/lbardou/leuko_runs/` | Checkpoints, TensorBoard logs |
 | `/mnt/scratch/user/lbardou/leuko_cache_wma/` | Preprocessed `.pt` cache |
