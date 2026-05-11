@@ -13,8 +13,11 @@ Cible realiste : AUPREC 0.35-0.55.
 | `jobs/slurm_train.sh` | Job SLURM training (single + array multi-fold) | DONE |
 | `jobs/slurm_gradcam.sh` | Job SLURM GradCAM | DONE |
 | `jobs/tensorboard.sh` | Lancer TensorBoard sur login node | DONE |
-| `data/labels_wma.csv` | Labels binaires fusionnes (genere par `wma_pipeline.py labels`) | A generer |
-| `data/manifest.csv` | Manifest avec paths NIfTI (genere par `wma_pipeline.py manifest`) | A generer |
+| `data/labels_full.csv` | Labels 8947x14 (3-source merge) | DONE |
+| `data/manifest.csv` | Manifest 8947x5 avec paths NIfTI | DONE |
+| `data/available_subjects.txt` | 2717 IDs disponibles sur serveur | DONE |
+| `docs/context.md` | Doc unique : env, labels, modele, training, RSI, paths | DONE |
+| `docs/commands.md` | Reference commandes detaillees | DONE |
 | `progress.md` | Ce fichier | Actif |
 
 ## Architecture du pipeline
@@ -118,3 +121,9 @@ sbatch jobs/slurm_gradcam.sh /path/to/best_model.pt 0
   - `eval` avec TTA : OK
   - `wma_gradcam.py` : heatmaps NIfTI + aggregate + plots + error analysis OK
   - Seul non-teste : libauc (APLoss/SOAP/DualSampler) — pas installe localement, sera teste sur HPC
+
+### 2026-05-11
+- [x] Fusion docs (abcd.md + HPC.md + info.md + commands.md) → `docs/context.md` (document unique compact)
+- [x] Suppression abcd.md, HPC.md, info.md (redondants)
+- [x] Conservation commands.md (reference commandes detaillees)
+- [x] Mise a jour progress.md (table fichiers, log)
