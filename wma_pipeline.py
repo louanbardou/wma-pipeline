@@ -576,6 +576,9 @@ def cmd_train(args):
         ckpt = torch.load(cfg.pretrained_weights, map_location="cpu", weights_only=False)
         sd = ckpt.get("state_dict", ckpt.get("model", ckpt))
         sd = {k.replace("module.", ""): v for k, v in sd.items()}
+        sd = {k: v for k, v in sd.items() if not k.startswith("conv_seg")}
+        if "conv1.weight" in sd and sd["conv1.weight"].shape[1] == 1 and cfg.in_channels > 1:
+            sd["conv1.weight"] = sd["conv1.weight"].repeat(1, cfg.in_channels, 1, 1, 1) / cfg.in_channels
         miss, unexp = model.load_state_dict(sd, strict=False)
         print(f"Pretrained: missing={len(miss)}, unexpected={len(unexp)}")
 
