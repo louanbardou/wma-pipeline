@@ -41,15 +41,21 @@ Dataset: 2 717 subjects, 8 947 sessions, 739 WMA+ (8.3%), 262 unique WMA+ subjec
 
 | Path | Content |
 |---|---|
-| `/mnt/fac/CX500007_DS1/bardou/WMA/` | Pipeline code + data + jobs |
+| `/mnt/fac/CX500007_DS1/bardou/wma-pipeline/` | Pipeline code + data + jobs (git repo) |
 | `/mnt/scratch/user/lbardou/abcd_leuko/` | NIfTI data (`$ABCD_IMAGING`): `sub-*/ses-*/anat/*_{T1w,T2w}.nii.gz` |
-| `/mnt/scratch/user/lbardou/leuko_runs/` | Checkpoints, TensorBoard logs |
-| `/mnt/scratch/user/lbardou/leuko_cache_wma/` | Preprocessed `.pt` cache |
-| `/mnt/scratch/user/lbardou/leuko_logs/` | SLURM logs |
-| `WMA/.venv/` | Python venv (PyTorch 2.5.1/cu124, MONAI, LibAUC, nibabel). Install: `bash WMA/install_env.sh` |
+| `/mnt/scratch/user/lbardou/wma_runs/` | Checkpoints, TensorBoard logs (`$WMA_RUNS`) |
+| `/mnt/scratch/user/lbardou/wma_cache/` | Preprocessed `.pt` cache (`$WMA_CACHE`) |
+| `/mnt/scratch/user/lbardou/wma_logs/` | SLURM logs (`$WMA_LOGS`) |
+| `wma-pipeline/.venv/` | Python venv (PyTorch 2.5.1/cu124, MONAI, LibAUC, nibabel). Install: `bash install_env.sh` |
 | `/mnt/fac/CX500007_DS1/ABCD/6.1/imaging/derivatives/mproc/` | Original ABCD imaging (read-only, includes `anat/` + `dwi/`) |
 
-Activate: `source WMA/activate_env.sh` (sets `$ABCD_IMAGING`, `$WMA_DIR`, `$WMA_RUNS`, venv, CUDA 12.5).
+Activate: `source activate_env.sh` (sets `$ABCD_IMAGING`, `$WMA_DIR`, `$WMA_RUNS`, venv, CUDA 12.5).
+
+**TensorBoard**: logs are in `$WMA_RUNS/<run_name>/tb_logs/`. Launch with:
+```bash
+tensorboard --logdir /mnt/scratch/user/lbardou/wma_runs/<run_name>/tb_logs --bind_all --port 6006
+```
+Then tunnel: `ssh -L 6006:localhost:6006 lbardou@<host>`. For multiple folds use `--logdir_spec fold0:path0,fold1:path1,...`.
 
 ---
 
@@ -138,8 +144,8 @@ python wma_gradcam.py --checkpoint runs/wma/best_model.pt --manifest data/manife
 ## 10. Directory tree
 
 ```
-WMA/                         # Self-contained — clone this alone
-├── activate_env.sh          # Environment activation (replaces leuko_pipeline/activate_env.sh)
+wma-pipeline/                # Self-contained — clone this alone
+├── activate_env.sh          # Environment activation
 ├── install_env.sh           # Create .venv with all dependencies
 ├── requirements.txt         # Pip dependencies
 ├── .gitignore
@@ -149,7 +155,7 @@ WMA/                         # Self-contained — clone this alone
 │   ├── RSIproc_1_0_8.py     # dwi → RSI maps (RNI, RND, FNI, etc.)
 │   └── icosahedron.py       # dependency
 ├── data/{labels_full,manifest}.csv, available_subjects.txt
-├── docs/{info,abcd,rsi_processing,progress}.md
+├── docs/{info,abcd,rsi_processing,progress,HPC}.md
 ├── jobs/{slurm_train,slurm_gradcam,tensorboard}.sh
 └── .venv/                   # created by install_env.sh (gitignored)
 ```
