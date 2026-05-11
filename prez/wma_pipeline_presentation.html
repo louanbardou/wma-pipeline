@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WMA Detection Pipeline — Presentation</title>
+<style>
+  /* ===== RESET & BASE ===== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --white: #FFFFFF;
+    --off-white: #F5F5F5;
+    --charcoal: #333333;
+    --gray-medium: #666666;
+    --gray-light: #999999;
+    --gray-border: #CCCCCC;
+    --accent-blue: #0072B2;
+    --accent-teal: #009E73;
+    --okabe-orange: #E69F00;
+    --okabe-skyblue: #56B4E9;
+    --okabe-vermillon: #D55E00;
+    --okabe-purple: #CC79A7;
+    --font: 'Inter', 'Helvetica Neue', 'Calibri', Arial, sans-serif;
+  }
+
+  html, body { height: 100%; overflow: hidden; background: #000; font-family: var(--font); }
+
+  /* ===== SLIDE CONTAINER ===== */
+  .deck { position: relative; width: 100vw; height: 100vh; }
+
+  .slide {
+    position: absolute; top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 6vh 8vw;
+    background: var(--white);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.45s ease;
+  }
+  .slide.active { opacity: 1; pointer-events: auto; z-index: 10; }
+
+  /* ===== TYPOGRAPHY ===== */
+  .slide-title {
+    font-size: clamp(28px, 3.2vw, 48px);
+    font-weight: 700; color: var(--charcoal);
+    line-height: 1.25; margin-bottom: 3vh;
+  }
+  .slide-subtitle {
+    font-size: clamp(18px, 1.8vw, 30px);
+    font-weight: 600; color: var(--gray-medium);
+    line-height: 1.35; margin-bottom: 2vh;
+  }
+  .slide-body {
+    font-size: clamp(16px, 1.5vw, 26px);
+    font-weight: 400; color: var(--charcoal);
+    line-height: 1.6;
+  }
+  .slide-body ul { list-style: none; padding: 0; }
+  .slide-body ul li {
+    padding: 0.5em 0 0.5em 1.8em;
+    position: relative;
+  }
+  .slide-body ul li::before {
+    content: '';
+    position: absolute; left: 0; top: 1em;
+    width: 8px; height: 8px;
+    background: var(--accent-blue);
+    border-radius: 50%;
+  }
+  .accent { color: var(--accent-blue); font-weight: 700; }
+  .teal { color: var(--accent-teal); font-weight: 700; }
+  .caption {
+    font-size: clamp(11px, 1vw, 16px);
+    color: var(--gray-light); margin-top: 2vh;
+  }
+
+  /* ===== TITLE SLIDE ===== */
+  .slide.title-slide {
+    justify-content: center; align-items: center; text-align: center;
+    background: var(--white);
+  }
+  .slide.title-slide .slide-title {
+    font-size: clamp(32px, 4vw, 60px); margin-bottom: 2vh;
+  }
+  .slide.title-slide .slide-subtitle {
+    font-size: clamp(16px, 1.6vw, 26px); font-weight: 400; color: var(--gray-medium);
+  }
+  .slide.title-slide .author {
+    font-size: clamp(14px, 1.3vw, 22px); color: var(--accent-blue);
+    margin-top: 4vh; font-weight: 600;
+  }
+
+  /* ===== SECTION SLIDE ===== */
+  .slide.section-slide {
+    justify-content: center; align-items: flex-start;
+    background: var(--off-white);
+  }
+  .slide.section-slide .slide-title {
+    font-size: clamp(36px, 4.5vw, 64px);
+    color: var(--accent-blue);
+    border-left: 6px solid var(--accent-blue);
+    padding-left: 1.5vw;
+  }
+
+  /* ===== TWO COLUMNS ===== */
+  .two-col {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 4vw; align-items: start; width: 100%;
+  }
+  .three-col {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 3vw; align-items: start; width: 100%;
+  }
+
+  /* ===== DIAGRAM BOXES ===== */
+  .diagram-box {
+    background: var(--off-white);
+    border-left: 4px solid var(--accent-blue);
+    padding: 1.5em 1.8em; border-radius: 4px;
+    margin-bottom: 1.5vh;
+  }
+  .diagram-box.teal-border { border-left-color: var(--accent-teal); }
+  .diagram-box.orange-border { border-left-color: var(--okabe-orange); }
+  .diagram-box.vermillon-border { border-left-color: var(--okabe-vermillon); }
+  .diagram-box.purple-border { border-left-color: var(--okabe-purple); }
+  .diagram-box h3 {
+    font-size: clamp(14px, 1.3vw, 22px);
+    font-weight: 700; color: var(--charcoal); margin-bottom: 0.5em;
+  }
+  .diagram-box p, .diagram-box ul {
+    font-size: clamp(12px, 1.1vw, 18px);
+    color: var(--gray-medium); line-height: 1.5;
+  }
+  .diagram-box ul { list-style: disc; padding-left: 1.2em; }
+  .diagram-box ul li::before { display: none; }
+  .diagram-box ul li { padding: 0.2em 0; }
+
+  /* ===== FLOW ARROW ===== */
+  .flow-row {
+    display: flex; align-items: center; gap: 1vw;
+    flex-wrap: wrap; justify-content: center; width: 100%;
+  }
+  .flow-step {
+    background: var(--off-white);
+    border: 2px solid var(--gray-border);
+    border-radius: 6px; padding: 1.2em 1.5em;
+    text-align: center; flex: 1; min-width: 120px;
+  }
+  .flow-step.highlight {
+    border-color: var(--accent-blue);
+    background: #E8F4FD;
+  }
+  .flow-step h4 {
+    font-size: clamp(12px, 1.1vw, 18px);
+    font-weight: 700; color: var(--charcoal); margin-bottom: 0.3em;
+  }
+  .flow-step p {
+    font-size: clamp(10px, 0.9vw, 15px);
+    color: var(--gray-medium);
+  }
+  .flow-arrow {
+    font-size: clamp(18px, 2vw, 32px);
+    color: var(--accent-blue); font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  /* ===== TABLE ===== */
+  table.clean {
+    width: 100%; border-collapse: collapse;
+    font-size: clamp(12px, 1.1vw, 18px);
+    color: var(--charcoal);
+  }
+  table.clean th {
+    text-align: left; font-weight: 700;
+    border-bottom: 2px solid var(--accent-blue);
+    padding: 0.7em 1em; color: var(--charcoal);
+  }
+  table.clean td {
+    padding: 0.6em 1em;
+    border-bottom: 1px solid #eee;
+  }
+  table.clean tr:nth-child(even) td { background: #FAFAFA; }
+  table.clean td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* ===== CODE BLOCK ===== */
+  .code-block {
+    background: #F8F8F8; border: 1px solid #E0E0E0;
+    border-radius: 4px; padding: 1.2em 1.5em;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: clamp(11px, 1vw, 16px);
+    color: var(--charcoal); line-height: 1.6;
+    overflow-x: auto; white-space: pre;
+  }
+
+  /* ===== SEPARATOR LINE ===== */
+  .sep {
+    width: 60px; height: 3px;
+    background: var(--accent-blue);
+    border: none; margin: 2vh 0;
+  }
+
+  /* ===== NAV ===== */
+  .nav {
+    position: fixed; bottom: 2vh; right: 3vw; z-index: 100;
+    display: flex; gap: 12px; align-items: center;
+  }
+  .nav button {
+    background: var(--charcoal); color: var(--white);
+    border: none; border-radius: 50%; width: 44px; height: 44px;
+    font-size: 20px; cursor: pointer; opacity: 0.6;
+    transition: opacity 0.2s;
+  }
+  .nav button:hover { opacity: 1; }
+  .nav .counter {
+    font-size: 14px; color: var(--gray-light);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ===== PROGRESS BAR ===== */
+  .progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px;
+    background: var(--accent-blue); z-index: 100;
+    transition: width 0.3s ease;
+  }
+
+  /* ===== KEY FIGURE ===== */
+  .big-number {
+    font-size: clamp(48px, 7vw, 100px);
+    font-weight: 800; color: var(--accent-blue);
+    line-height: 1;
+  }
+  .big-label {
+    font-size: clamp(16px, 1.5vw, 24px);
+    color: var(--gray-medium); margin-top: 1vh;
+  }
+
+  /* ===== STAGE TIMELINE ===== */
+  .timeline {
+    display: flex; align-items: stretch; gap: 0; width: 100%; margin: 2vh 0;
+  }
+  .timeline-block {
+    flex: 1; padding: 1.5em; text-align: center;
+    position: relative;
+  }
+  .timeline-block.stage1 {
+    background: #E8F4FD; border-bottom: 4px solid var(--accent-blue);
+  }
+  .timeline-block.stage2 {
+    background: #E8F5E9; border-bottom: 4px solid var(--accent-teal);
+  }
+  .timeline-block h4 {
+    font-size: clamp(14px, 1.3vw, 22px);
+    font-weight: 700; margin-bottom: 0.5em;
+  }
+  .timeline-block p {
+    font-size: clamp(11px, 1vw, 16px);
+    color: var(--gray-medium); line-height: 1.4;
+  }
+  .timeline-block .epoch-label {
+    font-size: clamp(10px, 0.8vw, 13px);
+    color: var(--gray-light); margin-top: 0.5em;
+  }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progress"></div>
+
+<div class="deck" id="deck">
+
+<!-- ============================================================ -->
+<!-- SLIDE 1 : TITRE -->
+<!-- ============================================================ -->
+<div class="slide title-slide active">
+  <div class="slide-title">Detection des anomalies<br>de la substance blanche</div>
+  <hr class="sep" style="margin: 2vh auto;">
+  <div class="slide-subtitle">Pipeline de classification binaire WMA<br>sur IRM cerebrales T1 + T2 (cohorte ABCD)</div>
+  <div class="author">wma_pipeline.py &mdash; Architecture & Methodologie</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 2 : CONTEXTE - LE DEFI -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">Les anomalies de la substance blanche sont frequentes mais sous-detectees</div>
+  <hr class="sep">
+  <div class="two-col">
+    <div class="slide-body">
+      <ul>
+        <li><span class="accent">~500 sujets WMA+</span> vs ~6000 WMA- dans ABCD</li>
+        <li>Prevalence <span class="accent">&lt; 8%</span> &mdash; desequilibre severe</li>
+        <li>Detection manuelle chronophage et variable</li>
+        <li>Besoin d'un outil automatise fiable</li>
+      </ul>
+    </div>
+    <div>
+      <div class="diagram-box">
+        <h3>Cohorte ABCD</h3>
+        <p>Adolescent Brain Cognitive Development Study &mdash; plus grande etude longitudinale du developpement cerebral aux USA. Donnees IRM multi-sites avec labels radiologiques.</p>
+      </div>
+      <div class="diagram-box teal-border">
+        <h3>WMA (White Matter Abnormality)</h3>
+        <p>Hyperintensites de la substance blanche visibles en IRM, marqueurs de leucoaraiose pouvant indiquer des pathologies neurovasculaires.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 3 : LE PROBLEME -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">Le defi : classifier sans FLAIR, avec un ratio positif/negatif de 1:12</div>
+  <hr class="sep">
+  <div class="slide-body">
+    <ul>
+      <li><span class="accent">Pas de sequence FLAIR</span> dans ABCD &mdash; modalite de reference pour les WMA</li>
+      <li>Seulement <span class="accent">T1w + T2w</span> disponibles &rarr; signal plus subtil</li>
+      <li><span class="accent">Desequilibre extreme</span> : metriques classiques (accuracy, AUC) sont trompeuses</li>
+      <li>Metrique cible : <span class="accent">AUPREC</span> (Area Under Precision-Recall Curve)</li>
+    </ul>
+  </div>
+  <div class="caption">La metrique AUPREC est plus informative que l'AUROC en cas de forte prevalence negative &mdash; elle penalise les faux positifs dans un contexte rare-positif.</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 4 : SECTION - VUE D'ENSEMBLE -->
+<!-- ============================================================ -->
+<div class="slide section-slide">
+  <div class="slide-title">Vue d'ensemble<br>du pipeline</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 5 : ARCHITECTURE GLOBALE -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">4 sous-commandes couvrent l'ensemble du workflow</div>
+  <hr class="sep">
+  <div class="flow-row">
+    <div class="flow-step">
+      <h4>labels</h4>
+      <p>Fusion des labels<br>CSV &rarr; binaire</p>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step">
+      <h4>manifest</h4>
+      <p>Appariement labels<br>&harr; fichiers NIfTI</p>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step highlight">
+      <h4>train</h4>
+      <p>Entrainement<br>2 stages</p>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step">
+      <h4>eval</h4>
+      <p>Evaluation + TTA<br>seuil optimal</p>
+    </div>
+  </div>
+  <div class="caption" style="margin-top:3vh; text-align:center;">
+    Execution : <code style="background:#f0f0f0; padding:2px 8px; border-radius:3px;">python wma_pipeline.py &lt;subcommand&gt; [options]</code>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 6 : SECTION - LABEL FUSION -->
+<!-- ============================================================ -->
+<div class="slide section-slide">
+  <div class="slide-title">Etape 1<br>Fusion des labels</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 7 : LABEL FUSION DETAIL -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">Deux sources CSV sont fusionnees en un label binaire unique par sujet-session</div>
+  <hr class="sep">
+  <div class="two-col">
+    <div>
+      <div class="diagram-box">
+        <h3>CSV 1 &mdash; Predicted Findings</h3>
+        <ul>
+          <li>Colonne <code>id_redcap</code> &rarr; renommee <code>subject_id</code></li>
+          <li>Colonne <code>redcap_event_name</code> &rarr; mappee vers session BIDS</li>
+          <li>Recherche textuelle : "White Matter Abnormality"</li>
+        </ul>
+      </div>
+      <div class="diagram-box teal-border">
+        <h3>CSV 2 &mdash; finding</h3>
+        <ul>
+          <li>Colonnes <code>subject_id</code>, <code>event_name</code></li>
+          <li>Meme mapping event &rarr; session</li>
+          <li>Meme recherche textuelle</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="diagram-box orange-border">
+        <h3>Logique de fusion</h3>
+        <ul>
+          <li>Outer join sur (subject_id, session)</li>
+          <li><strong>OU logique</strong> : label = csv1 | csv2</li>
+          <li>Un seul positif suffit &rarr; label = 1</li>
+          <li>Valeurs manquantes traitees comme 0</li>
+        </ul>
+      </div>
+      <div class="diagram-box">
+        <h3>Mapping des sessions ABCD</h3>
+        <p style="font-family: monospace; font-size: 0.85em; line-height: 1.8;">
+          baseline_year_1 &rarr; ses-00A<br>
+          1_year_follow_up &rarr; ses-01A<br>
+          2_year_follow_up &rarr; ses-02A<br>
+          &hellip; jusqu'a ses-08A
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 8 : SECTION - MANIFEST -->
+<!-- ============================================================ -->
+<div class="slide section-slide">
+  <div class="slide-title">Etape 2<br>Construction du manifeste</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 9 : MANIFEST DETAIL -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">Le manifeste apparie chaque label a ses fichiers NIfTI T1w et T2w</div>
+  <hr class="sep">
+  <div class="two-col">
+    <div class="slide-body">
+      <ul>
+        <li>Parcours recursif de <code>sub-*/ses-*/anat/</code></li>
+        <li>Exige <span class="accent">T1w ET T2w</span> presents</li>
+        <li>Essaie 3 formats d'ID : <code>NDAR_INV...</code>, <code>bare_id</code>, <code>sub-...</code></li>
+        <li>Gestion robuste des ID heterogenes</li>
+      </ul>
+    </div>
+    <div>
+      <table class="clean">
+        <thead>
+          <tr><th>Colonne</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>subject_id</td><td>ID sujet (format sub-XXX)</td></tr>
+          <tr><td>session</td><td>Session BIDS (ses-00A...)</td></tr>
+          <tr><td>t1w_path</td><td>Chemin absolu T1w.nii.gz</td></tr>
+          <tr><td>t2w_path</td><td>Chemin absolu T2w.nii.gz</td></tr>
+          <tr><td>label</td><td class="num">0 ou 1</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="caption">Seuls les sujets disposant des deux modalites ET d'un label sont retenus &mdash; filtrage strict pour eviter les donnees incompletes.</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 10 : SECTION - PREPROCESSING -->
+<!-- ============================================================ -->
+<div class="slide section-slide">
+  <div class="slide-title">Etape 3<br>Preprocessing & Augmentation</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 11 : INPUT 3 CANAUX -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">L'entree 3 canaux T1 + T2 + ratio T2/T1 compense l'absence de FLAIR</div>
+  <hr class="sep">
+  <div class="three-col">
+    <div class="diagram-box">
+      <h3>Canal 1 : T1w</h3>
+      <p>Contraste anatomique. Substance blanche brillante, grise sombre.</p>
+    </div>
+    <div class="diagram-box teal-border">
+      <h3>Canal 2 : T2w</h3>
+      <p>Contraste complementaire. Les lesions WMA apparaissent en hyperintensites.</p>
+    </div>
+    <div class="diagram-box orange-border">
+      <h3>Canal 3 : T2/T1</h3>
+      <p>Ratio synthetique. Amplifie le contraste des anomalies &mdash; proxy de FLAIR.</p>
+    </div>
+  </div>
+  <div style="margin-top: 2vh;">
+    <div class="code-block">ratio = T2 / (|T1| + eps)          # eps = 1e-3
+ratio = clamp(ratio, 0, 5)         # eviter les extremes
+ratio = (ratio - mean) / (std + eps)  # normalise sur le masque T1 > 0.01</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 12 : PREPROCESSING PIPELINE -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">Le preprocessing standardise chaque volume en patch 128&sup3; isotrope</div>
+  <hr class="sep">
+  <div class="flow-row" style="flex-wrap: wrap; gap: 0.8vw;">
+    <div class="flow-step"><h4>LoadImage</h4><p>NIfTI &rarr; tenseur</p></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step"><h4>Orientation</h4><p>RAS standard</p></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step"><h4>Spacing</h4><p>1.0mm isotrope</p></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step"><h4>CropForeground</h4><p>Retire le fond</p></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step"><h4>Normalize</h4><p>Non-zero, par canal</p></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step highlight"><h4>Patch 128&sup3;</h4><p>Pad + Crop</p></div>
+  </div>
+  <div class="caption" style="margin-top:3vh;">
+    PATCH_SIZE = (128, 128, 128) &mdash; TARGET_VOXEL = (1.0, 1.0, 1.0) mm &mdash; Pipeline MONAI Compose
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 13 : AUGMENTATIONS -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">7 augmentations stochastiques regularisent le modele sur le petit set WMA+</div>
+  <hr class="sep">
+  <div class="two-col">
+    <div>
+      <table class="clean">
+        <thead><tr><th>Augmentation</th><th>Prob.</th><th>Parametres</th></tr></thead>
+        <tbody>
+          <tr><td>RandFlip (axe 0)</td><td class="num">50%</td><td>Symetrie gauche-droite</td></tr>
+          <tr><td>RandRotate90</td><td class="num">30%</td><td>max_k=3</td></tr>
+          <tr><td>RandAffine</td><td class="num">30%</td><td>rot 0.1, scale 5%, trans 5px</td></tr>
+          <tr><td>GaussianNoise</td><td class="num">20%</td><td>std=0.05</td></tr>
+          <tr><td>GaussianSmooth</td><td class="num">20%</td><td>sigma 0.5-1.0</td></tr>
+          <tr><td>ScaleIntensity</td><td class="num">30%</td><td>factor=0.1</td></tr>
+          <tr><td>CoarseDropout</td><td class="num">20%</td><td>3 trous de 16&sup3;</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="slide-body">
+      <div class="diagram-box">
+        <h3>Pourquoi ces choix ?</h3>
+        <ul>
+          <li>Augmentations spatiales + intensite pour couvrir les variations multi-sites</li>
+          <li>CoarseDropout force le modele a ne pas dependre d'une seule region</li>
+          <li>Probabilites moderees (20-50%) pour eviter la sur-augmentation</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 14 : SECTION - MODELE -->
+<!-- ============================================================ -->
+<div class="slide section-slide">
+  <div class="slide-title">Etape 4<br>Architecture du modele</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 15 : CHOIX BACKBONE -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">ResNet-10 3D : 14.4M params offrent un meilleur ratio param/positif que SwinUNETR</div>
+  <hr class="sep">
+  <div class="two-col">
+    <div>
+      <table class="clean">
+        <thead><tr><th>Backbone</th><th>Params</th><th>Hidden dim</th></tr></thead>
+        <tbody>
+          <tr><td><span class="accent">ResNet-10 3D</span></td><td class="num">~14.4M</td><td class="num">512</td></tr>
+          <tr><td>SwinUNETR tiny</td><td class="num">~15.8M</td><td class="num">384</td></tr>
+          <tr><td style="color: var(--gray-light);">SwinUNETR base</td><td class="num" style="color: var(--gray-light);">~62M</td><td class="num" style="color: var(--gray-light);">768</td></tr>
+        </tbody>
+      </table>
+      <div class="caption" style="margin-top: 2vh;">
+        Avec ~500 positifs, un modele trop gros sur-apprend rapidement.
+      </div>
+    </div>
+    <div>
+      <div class="diagram-box">
+        <h3>Design 80/20</h3>
+        <p>Maximiser l'impact sur AUPREC avec le minimum de complexite. ResNet-10 est le choix delibere : plus compact, plus stable, plus rapide a entrainer.</p>
+      </div>
+      <div class="diagram-box teal-border">
+        <h3>SwinUNETR reste une option</h3>
+        <p>Disponible via <code>--backbone swin_tiny</code> pour benchmarking. Utilise des checkpoints gradient pour la memoire.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 16 : ARCHITECTURE HEAD -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">La tete de classification combine LayerNorm, Dropout et 2 couches lineaires</div>
+  <hr class="sep">
+  <div class="flow-row" style="flex-wrap: wrap;">
+    <div class="flow-step"><h4>Encoder</h4><p>ResNet-10 3D<br>conv &rarr; layer1..4</p></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step"><h4>DropPath</h4><p>Dropout3d<br>p=0.1</p></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step"><h4>GAP</h4><p>AdaptiveAvgPool3d<br>&rarr; [B, 512, 1, 1, 1]</p></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step highlight"><h4>Head</h4><p>Flatten &rarr; LN &rarr; Drop(0.4)<br>&rarr; 128 &rarr; GELU &rarr; Drop(0.2)<br>&rarr; 1</p></div>
+  </div>
+  <div class="two-col" style="margin-top: 3vh;">
+    <div class="diagram-box">
+      <h3>Stochastic Depth (Drop Path)</h3>
+      <p>Dropout3d applique entre les stages du ResNet. Regularise les feature maps intermediaires, pas seulement la tete.</p>
+    </div>
+    <div class="diagram-box teal-border">
+      <h3>Progressive Unfreezing</h3>
+      <p>Backbone gele pendant les <code>freeze_epochs</code> premieres epoques (defaut: 5). Seule la tete apprend d'abord.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 17 : SECTION - TRAINING -->
+<!-- ============================================================ -->
+<div class="slide section-slide">
+  <div class="slide-title">Etape 5<br>Entrainement 2 stages</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 18 : 2 STAGE OVERVIEW -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">Stage 1 (CE+Focal) stabilise les scores, Stage 2 (APLoss) optimise directement AUPREC</div>
+  <hr class="sep">
+  <div class="timeline">
+    <div class="timeline-block stage1">
+      <h4 style="color: var(--accent-blue);">Stage 1 : Warmup</h4>
+      <p><strong>Loss :</strong> FocalBCE<br>(gamma=2, alpha=0.85)</p>
+      <p style="margin-top: 0.5em;"><strong>Optimizer :</strong> AdamW</p>
+      <p style="margin-top: 0.5em;"><strong>Objectif :</strong> Apprendre une distribution de scores bien separee</p>
+      <div class="epoch-label">Epoques 1 &rarr; 15</div>
+    </div>
+    <div class="timeline-block stage2">
+      <h4 style="color: var(--accent-teal);">Stage 2 : Fine-tune</h4>
+      <p><strong>Loss :</strong> APLoss (LibAUC)<br>(gamma=0.9, margin=1.0)</p>
+      <p style="margin-top: 0.5em;"><strong>Optimizer :</strong> SOAP</p>
+      <p style="margin-top: 0.5em;"><strong>Objectif :</strong> Maximiser directement l'AP</p>
+      <div class="epoch-label">Epoques 16 &rarr; 40</div>
+    </div>
+  </div>
+  <div class="caption">
+    La transition se fait a l'epoque <code>warmup_epochs + 1</code>. Si LibAUC n'est pas installe, Stage 2 continue avec la loss CE.
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19 : FOCAL BCE DETAIL -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">FocalBCE surpondere les positifs difficiles avec alpha=0.85 et gamma=2</div>
+  <hr class="sep">
+  <div class="two-col">
+    <div>
+      <div class="code-block">FocalBCE(logits, targets):
+  bce = BCE(logits, targets)   # loss standard
+  pt  = p * t + (1-p) * (1-t)  # probabilite du vrai label
+  alpha_t = 0.85*t + 0.15*(1-t) # poids de classe
+  focal = alpha_t * (1-pt)^2 * bce
+
+  return bce.mean() + 0.5 * focal.mean()</div>
+    </div>
+    <div class="slide-body">
+      <div class="diagram-box">
+        <h3>Pourquoi combiner BCE + Focal ?</h3>
+        <ul>
+          <li><strong>BCE pur</strong> : gradient stable mais ignore le desequilibre</li>
+          <li><strong>Focal pur</strong> : peut rendre l'apprentissage instable tot dans le training</li>
+          <li><strong>Somme ponderee</strong> : stabilite + attention aux cas rares</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 20 : APLOSS + SOAP -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">APLoss optimise l'aire sous la courbe PR de facon differentiable</div>
+  <hr class="sep">
+  <div class="two-col">
+    <div>
+      <div class="diagram-box">
+        <h3>APLoss (LibAUC)</h3>
+        <ul>
+          <li>Approximation surrogat de l'Average Precision</li>
+          <li><code>gamma=0.9</code> : facteur de momentum</li>
+          <li><code>margin=1.0</code> : marge entre paires +/-</li>
+          <li>Necessite un <strong>DualSampler</strong> pour equilibrer les batchs</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="diagram-box teal-border">
+        <h3>SOAP Optimizer</h3>
+        <ul>
+          <li>Optimizer dedie aux losses non-decomposables</li>
+          <li><code>lr = lr_base / 3</code> pour la stabilite</li>
+          <li><code>epoch_decay=1e-3</code> : regularisation interne</li>
+        </ul>
+      </div>
+      <div class="diagram-box orange-border" style="margin-top: 1vh;">
+        <h3>DualSampler</h3>
+        <p>Garantit au moins 1 positif par batch. Essentiel pour que les paires +/- soient toujours disponibles dans la loss.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 21 : OPTIMISATION DETAILS -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">Layer-wise LR decay, EMA et cosine schedule stabilisent le fine-tuning</div>
+  <hr class="sep">
+  <div class="three-col">
+    <div class="diagram-box">
+      <h3>Layer-wise LR Decay</h3>
+      <ul>
+        <li>Facteur <code>0.75</code> par couche</li>
+        <li>Couches profondes : LR tres bas</li>
+        <li>Tete : LR complet</li>
+        <li>Backbone factor : <code>0.1x</code></li>
+      </ul>
+      <p style="margin-top: 0.5em; font-family: monospace; font-size: 0.85em;">
+        layer4: 3e-5<br>layer3: 2.25e-5<br>layer2: 1.7e-5<br>head: 3e-4
+      </p>
+    </div>
+    <div class="diagram-box teal-border">
+      <h3>EMA (Exponential Moving Average)</h3>
+      <ul>
+        <li>Decay = <code>0.9995</code></li>
+        <li>Moyenne glissante des poids</li>
+        <li>Modele EMA utilise pour la validation</li>
+        <li>Sauvegarde dans le checkpoint</li>
+      </ul>
+    </div>
+    <div class="diagram-box orange-border">
+      <h3>Cosine Annealing</h3>
+      <ul>
+        <li>LR suit un cosinus decroissant</li>
+        <li>Reset au passage Stage 1 &rarr; 2</li>
+        <li>Plancher a <code>0.1%</code> du LR initial</li>
+        <li>Un schedule par stage</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 22 : GRADIENT ACCUMULATION & PRECISION -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">bf16 + gradient accumulation 4x simulent un batch effectif de 16 sur GPU limitee</div>
+  <hr class="sep">
+  <div class="two-col">
+    <div>
+      <div class="diagram-box">
+        <h3>Mixed Precision (bf16)</h3>
+        <ul>
+          <li><code>torch.amp.autocast("cuda", dtype=bfloat16)</code></li>
+          <li>Forward pass en bf16, loss en float32</li>
+          <li>Reduit la memoire GPU ~2x</li>
+          <li>bfloat16 > float16 : pas besoin de loss scaling</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="diagram-box teal-border">
+        <h3>Gradient Accumulation</h3>
+        <ul>
+          <li>Batch reel : <code>4</code></li>
+          <li>Accumulation : <code>4</code> steps</li>
+          <li>Batch effectif : <span class="accent">16</span></li>
+          <li>Clip grad norm a <code>1.0</code></li>
+        </ul>
+      </div>
+      <div class="diagram-box orange-border" style="margin-top: 1vh;">
+        <h3>Early Stopping</h3>
+        <p>Patience = <code>10</code> epoques sans amelioration de val AUPREC (&gt; min_delta 0.001). Reset a chaque changement de stage.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 23 : SECTION - VALIDATION & CROSS-VAL -->
+<!-- ============================================================ -->
+<div class="slide section-slide">
+  <div class="slide-title">Etape 6<br>Validation & Evaluation</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 24 : CROSS VALIDATION -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">StratifiedGroupKFold empeche la fuite de donnees entre folds</div>
+  <hr class="sep">
+  <div class="two-col">
+    <div class="slide-body">
+      <ul>
+        <li><span class="accent">5 folds</span> par defaut (configurable)</li>
+        <li><span class="accent">Stratifie</span> : meme ratio WMA+/WMA- dans chaque fold</li>
+        <li><span class="accent">Groupe = subject_id</span> : toutes les sessions d'un sujet dans le meme fold</li>
+        <li>Empeche l'apprentissage de l'anatomie individuelle</li>
+      </ul>
+    </div>
+    <div>
+      <div class="diagram-box">
+        <h3>Pourquoi GroupKFold ?</h3>
+        <p>Un sujet peut avoir plusieurs sessions (ses-00A, ses-02A...). Sans groupement, le modele pourrait "reconnoaitre" un cerveau deja vu &rarr; surestimation des performances.</p>
+      </div>
+      <div class="diagram-box vermillon-border">
+        <h3>Alerte de performance</h3>
+        <p>Si val AUPREC &lt; 0.18 apres Stage 1, un warning est emis. Cela indique un probleme potentiel (donnees, hyperparametres, ou convergence).</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 25 : EVALUATION METRICS -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">L'evaluation rapporte AUPREC, AUROC, Brier, F1 optimal et Sens@Spec90</div>
+  <hr class="sep">
+  <div class="two-col">
+    <div>
+      <table class="clean">
+        <thead><tr><th>Metrique</th><th>Signification</th></tr></thead>
+        <tbody>
+          <tr><td><span class="accent">AUPREC</span></td><td>Metrique principale &mdash; aire sous la courbe PR</td></tr>
+          <tr><td>AUROC</td><td>Pouvoir discriminant global</td></tr>
+          <tr><td>Brier Score</td><td>Calibration des probabilites</td></tr>
+          <tr><td>F1 optimal</td><td>Meilleur compromis precision/rappel</td></tr>
+          <tr><td>Sens@Spec90</td><td>Sensibilite quand specificite = 90%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <div class="diagram-box">
+        <h3>Seuil optimal</h3>
+        <p>Calcule sur la courbe PR en maximisant le F1-score. Pas un seuil arbitraire a 0.5 &mdash; adapte au desequilibre de classes.</p>
+      </div>
+      <div class="diagram-box teal-border">
+        <h3>TTA (Test-Time Augmentation)</h3>
+        <p>Moyenne des predictions sur 4 versions : originale + 3 flips axiaux. Active via <code>--use_tta</code>. Ameliore la robustesse de l'inference.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 26 : SECTION - INFRASTRUCTURE -->
+<!-- ============================================================ -->
+<div class="slide section-slide">
+  <div class="slide-title">Infrastructure<br>& Reproductibilite</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 27 : INFRA DETAILS -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">Concu pour un HPC isole : TensorBoard offline, seed fixe, cache disque</div>
+  <hr class="sep">
+  <div class="three-col">
+    <div class="diagram-box">
+      <h3>Reproductibilite</h3>
+      <ul>
+        <li><code>set_seed(42)</code> : random, numpy, torch, CUDA</li>
+        <li><code>cudnn.deterministic = True</code></li>
+        <li>Config sauvegardee en JSON</li>
+        <li>Historique complet en CSV</li>
+      </ul>
+    </div>
+    <div class="diagram-box teal-border">
+      <h3>Monitoring</h3>
+      <ul>
+        <li>TensorBoard local (pas de WandB)</li>
+        <li>Logs : loss, AP, AUC, LR, stage</li>
+        <li>Courbes PR tous les 5 epoques</li>
+        <li>HParams pour comparaison de runs</li>
+      </ul>
+    </div>
+    <div class="diagram-box orange-border">
+      <h3>Cache & Performance</h3>
+      <ul>
+        <li>Cache disque optionnel (.pt)</li>
+        <li>8 workers DataLoader</li>
+        <li>Persistent workers</li>
+        <li>Pin memory CUDA</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 28 : MODE SYNTHETIQUE -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">Le mode synthetique permet de tester le pipeline sans donnees NIfTI</div>
+  <hr class="sep">
+  <div class="two-col">
+    <div>
+      <div class="code-block">python wma_pipeline.py train \
+  --synthetic \
+  --epochs 5 \
+  --batch_size 2</div>
+      <div class="caption" style="margin-top: 2vh;">
+        Genere des tenseurs aleatoires 3&times;32&times;32&times;32 &mdash; permet de valider le code sur CPU sans acces aux donnees.
+      </div>
+    </div>
+    <div class="slide-body">
+      <div class="diagram-box">
+        <h3>Utilite</h3>
+        <ul>
+          <li>Tests unitaires et CI/CD</li>
+          <li>Debug du training loop</li>
+          <li>Verification des shapes et de la loss</li>
+          <li>Fonctionne sans GPU</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 29 : RECAPITULATIF -->
+<!-- ============================================================ -->
+<div class="slide">
+  <div class="slide-title">Un pipeline single-file, reproductible, optimise pour la detection de cas rares</div>
+  <hr class="sep">
+  <div class="slide-body">
+    <div class="flow-row" style="margin-bottom: 3vh;">
+      <div class="flow-step"><h4>Labels</h4><p>Fusion OR<br>de 2 CSV</p></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><h4>Manifest</h4><p>T1+T2 NIfTI<br>multi-format ID</p></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><h4>3 canaux</h4><p>T1 + T2 + T2/T1<br>proxy FLAIR</p></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><h4>ResNet-10 3D</h4><p>14.4M params<br>DropPath + EMA</p></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step highlight"><h4>2-Stage</h4><p>FocalBCE &rarr; APLoss<br>AdamW &rarr; SOAP</p></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><h4>Eval</h4><p>AUPREC + TTA<br>seuil optimal</p></div>
+    </div>
+  </div>
+  <div class="two-col">
+    <div class="diagram-box">
+      <h3>Points cles</h3>
+      <ul>
+        <li>Input 3 canaux compense l'absence de FLAIR</li>
+        <li>2-stage training cible directement AUPREC</li>
+        <li>GroupKFold empeche la fuite de donnees</li>
+      </ul>
+    </div>
+    <div class="diagram-box teal-border">
+      <h3>Choix de design</h3>
+      <ul>
+        <li>Single-file pour la portabilite HPC</li>
+        <li>Lazy import des libs ML</li>
+        <li>Mode synthetique pour le debug</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SLIDE 30 : SLIDE FINALE -->
+<!-- ============================================================ -->
+<div class="slide title-slide">
+  <div class="slide-title" style="font-size: clamp(24px, 3vw, 44px);">
+    Detecter les WMA sans FLAIR :<br>
+    <span style="color: var(--accent-blue);">3 canaux, 2 stages, 1 fichier</span>
+  </div>
+  <hr class="sep" style="margin: 2vh auto;">
+  <div class="slide-subtitle" style="font-weight: 400; font-size: clamp(14px, 1.3vw, 22px); color: var(--gray-medium);">
+    wma_pipeline.py &mdash; ResNet-10 3D &mdash; MONAI + LibAUC + PyTorch
+  </div>
+  <div class="author" style="margin-top: 4vh;">
+    Questions ?
+  </div>
+</div>
+
+</div><!-- /deck -->
+
+<!-- ===== NAVIGATION ===== -->
+<div class="nav">
+  <button id="prev" aria-label="Slide precedente">&larr;</button>
+  <span class="counter" id="counter">1 / 1</span>
+  <button id="next" aria-label="Slide suivante">&rarr;</button>
+</div>
+
+<script>
+(function() {
+  const slides = document.querySelectorAll('.slide');
+  const counter = document.getElementById('counter');
+  const progress = document.getElementById('progress');
+  let current = 0;
+
+  function show(i) {
+    if (i < 0 || i >= slides.length) return;
+    slides[current].classList.remove('active');
+    current = i;
+    slides[current].classList.add('active');
+    counter.textContent = (current + 1) + ' / ' + slides.length;
+    progress.style.width = ((current + 1) / slides.length * 100) + '%';
+  }
+
+  document.getElementById('prev').addEventListener('click', () => show(current - 1));
+  document.getElementById('next').addEventListener('click', () => show(current + 1));
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); show(current + 1); }
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'Backspace') { e.preventDefault(); show(current - 1); }
+    if (e.key === 'Home') { e.preventDefault(); show(0); }
+    if (e.key === 'End') { e.preventDefault(); show(slides.length - 1); }
+  });
+
+  // Touch swipe
+  let touchStartX = 0;
+  document.addEventListener('touchstart', (e) => { touchStartX = e.changedTouches[0].screenX; });
+  document.addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].screenX - touchStartX;
+    if (Math.abs(dx) > 50) { dx < 0 ? show(current + 1) : show(current - 1); }
+  });
+
+  show(0);
+})();
+</script>
+</body>
+</html>
