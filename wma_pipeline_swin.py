@@ -299,7 +299,7 @@ def _ensure_masks(df, manifest_path):
 
     print(f"Running SynthStrip on {len(to_process)} subjects missing brain masks...")
     tasks = [(t1w, mask_p, "/mnt/fac") for _, t1w, mask_p in to_process]
-    n_jobs = min(8, len(tasks))
+    n_jobs = min(int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() or 8)), len(tasks))
 
     if n_jobs == 1:
         results = [_run_synthstrip_single(t) for t in tasks]
