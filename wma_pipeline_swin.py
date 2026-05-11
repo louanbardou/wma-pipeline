@@ -9,16 +9,17 @@ Binary classification on the ABCD dataset (~500 WMA+ subjects, ~6000 WMA- subjec
 self-supervised pretrained weights (64-gpu-model_bestValRMSE.pt).
 
 Subcommands:
-    labels   — Fuse two CSV sources into binary WMA labels
-    manifest — Match labels to NIfTI files on disk
-    train    — 2-stage training: CE+Focal warmup → APLoss+SOAP fine-tune
-    eval     — Evaluate checkpoint with TTA, optimal threshold, per-site metrics
+    labels      — Fuse two CSV sources into binary WMA labels
+    manifest    — Match labels to NIfTI files on disk
+    skullstrip  — Offline skull-stripping with SynthStrip (run once before training)
+    train       — 2-stage training: CE+Focal warmup → APLoss+SOAP fine-tune
+    eval        — Evaluate checkpoint with TTA, optimal threshold, per-site metrics
 
 Key design choices:
     - SwinUNETR feature_size=48 (~62M total, encoder ~28M) with self-supervised init
     - Pretrained weights from 64-GPU RMSE model → strong feature initialization
     - patch_embed adapted from 1ch → 3ch (weight replication + scaling)
-    - 3-channel input: T1 + T2 + T2/T1 ratio (compensates for missing FLAIR)
+    - 2-channel input: T1 + T2 (skull-stripped)
     - 2-stage loss: CE warmup gives APLoss a good starting score distribution
     - Layer-wise LR decay across SwinUNETR stages (patch_embed → layers1..4 → head)
     - bf16 mixed precision + gradient accumulation + EMA
@@ -40,8 +41,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-PATCH_SIZE = (128, 128, 128)
-TARGET_VOXEL = (1.0, 1.0, 1.0)
+PATCH_SIZE = (192, 192, 192)
+
+SYNTHSTRIP_SIF = "/mnt/fac/CX500002_DS1/lab-utils/synthstrip_v1.8.sif"
 
 EVENT_MAP = {
     "baseline_year_1_arm_1": "ses-00A",
@@ -53,7 +55,7 @@ EVENT_MAP = {
     "8_year_follow_up_y_arm_1": "ses-08A",
 }
 
-PRETRAINED_WEIGHTS_DEFAULT = "/Users/louan/Downloads/64-gpu-model_bestValRMSE.pt"
+PRETRAINED_WEIGHTS_DEFAULT = "/mnt/fac/CX500007_DS1/bardou/wma-pipeline/64-gpu-model_bestValRMSE.pt"
 
 
 # ============================================================
@@ -67,16 +69,16 @@ class Config:
     cache_dir: str = ""
     backbone: str = "swin"
     feature_size: int = 48
-    in_channels: int = 3
+    in_channels: int = 2
     dropout: float = 0.4
     drop_path: float = 0.1
     epochs: int = 40
-    warmup_epochs: int = 15
+    warmup_epochs: int = 10
     batch_size: int = 2
     effective_batch_size: int = 16
     lr: float = 1e-4
     lr_backbone_factor: float = 0.1
-    freeze_epochs: int = 5
+    freeze_epochs: int = 10
     weight_decay: float = 5e-4
     aploss_gamma: float = 0.9
     epoch_decay: float = 1e-3
@@ -209,6 +211,116 @@ def cmd_manifest(args):
 
 
 # ============================================================
+# SECTION 2b: SKULL-STRIPPING (offline, SynthStrip)
+# ============================================================
+
+def _run_synthstrip_single(args_tuple):
+    """Worker function for parallel skull-stripping."""
+    import subprocess
+    t1w_path, mask_path, bind_paths = args_tuple
+    mask_path = Path(mask_path)
+    if mask_path.exists():
+        return str(mask_path), True, "already exists"
+    mask_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "apptainer", "exec", "--bind", bind_paths,
+        SYNTHSTRIP_SIF, "mri_synthstrip",
+        "-i", str(t1w_path),
+        "-m", str(mask_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        return str(mask_path), False, result.stdout[:200] + result.stderr[:200]
+    return str(mask_path), True, "done"
+
+
+def cmd_skullstrip(args):
+    """Run SynthStrip skull-stripping on all subjects in the manifest."""
+    from multiprocessing import Pool
+
+    df = pd.read_csv(args.manifest)
+    out_dir = Path(args.out_dir) if args.out_dir else None
+    bind_paths = args.bind or "/mnt/fac"
+
+    tasks = []
+    for _, row in df.iterrows():
+        t1w = Path(row["t1w_path"])
+        if out_dir:
+            mask_path = out_dir / f"{t1w.name.replace('_T1w.nii.gz', '_brain_mask.nii.gz')}"
+        else:
+            mask_path = t1w.parent / t1w.name.replace("_T1w.nii.gz", "_brain_mask.nii.gz")
+        tasks.append((str(t1w), str(mask_path), bind_paths))
+
+    print(f"Skull-stripping {len(tasks)} subjects with SynthStrip (n_jobs={args.n_jobs})")
+
+    if args.n_jobs == 1:
+        results = [_run_synthstrip_single(t) for t in tasks]
+    else:
+        with Pool(args.n_jobs) as pool:
+            results = pool.map(_run_synthstrip_single, tasks)
+
+    n_ok = sum(1 for _, ok, _ in results if ok)
+    n_fail = len(results) - n_ok
+    print(f"  Done: {n_ok} succeeded, {n_fail} failed")
+
+    for mask_p, ok, msg in results:
+        if not ok:
+            print(f"  FAIL: {mask_p} — {msg}")
+
+    mask_paths = [r[0] for r in results]
+    df["mask_path"] = mask_paths
+    df.to_csv(args.manifest, index=False)
+    print(f"  Updated manifest with mask_path column → {args.manifest}")
+
+
+def _ensure_masks(df, manifest_path):
+    """Check all subjects have brain masks; run SynthStrip on missing ones.
+    Skips subjects already processed. Updates manifest in place."""
+    from multiprocessing import Pool
+
+    if "mask_path" not in df.columns:
+        df["mask_path"] = None
+
+    to_process = []
+    for i, row in df.iterrows():
+        mask_p = row.get("mask_path")
+        if pd.notna(mask_p) and Path(str(mask_p)).exists():
+            continue
+        t1w = Path(row["t1w_path"])
+        mask_path = t1w.parent / t1w.name.replace("_T1w.nii.gz", "_brain_mask.nii.gz")
+        if mask_path.exists():
+            df.at[i, "mask_path"] = str(mask_path)
+            continue
+        to_process.append((i, str(t1w), str(mask_path)))
+
+    if not to_process:
+        print("All brain masks present — skipping skull-stripping")
+        return df
+
+    print(f"Running SynthStrip on {len(to_process)} subjects missing brain masks...")
+    tasks = [(t1w, mask_p, "/mnt/fac") for _, t1w, mask_p in to_process]
+    n_jobs = min(8, len(tasks))
+
+    if n_jobs == 1:
+        results = [_run_synthstrip_single(t) for t in tasks]
+    else:
+        with Pool(n_jobs) as pool:
+            results = pool.map(_run_synthstrip_single, tasks)
+
+    n_ok = 0
+    for (idx, _, mask_p), (_, ok, msg) in zip(to_process, results):
+        if ok:
+            df.at[idx, "mask_path"] = mask_p
+            n_ok += 1
+        else:
+            print(f"  FAIL: {mask_p} — {msg}")
+
+    print(f"  Skull-stripping done: {n_ok}/{len(to_process)} succeeded")
+    df.to_csv(manifest_path, index=False)
+    return df
+
+
+# ============================================================
 # SECTIONS 3-8: ML CODE (loaded on demand via init_ml())
 # ============================================================
 
@@ -231,10 +343,8 @@ def init_ml():
     from monai.networks.nets import SwinUNETR as _SwinUNETR
     from monai.transforms import (
         ConcatItemsd, Compose, CropForegroundd, DeleteItemsd,
-        EnsureChannelFirstd, LoadImaged, NormalizeIntensityd, Orientationd,
-        RandAffined, RandCoarseDropoutd, RandFlipd, RandGaussianNoised,
-        RandGaussianSmoothd, RandRotate90d, RandScaleIntensityd,
-        RandSpatialCropd, Spacingd, SpatialPadd, ToTensord,
+        EnsureChannelFirstd, LoadImaged, MaskIntensityd, NormalizeIntensityd,
+        Orientationd, RandSpatialCropd, SpatialPadd, ToTensord,
     )
 
     try:
@@ -259,59 +369,34 @@ def init_ml():
 
     # ── Transforms ──
 
-    def _compute_ratio(data):
-        t1, t2 = data["t1w"], data["t2w"]
-        eps = 1e-3
-        ratio = t2 / (t1.abs() + eps)
-        ratio = ratio.clamp(0, 5)
-        mask = t1.abs() > 0.01
-        if mask.any():
-            vals = ratio[mask]
-            ratio = (ratio - vals.mean()) / (vals.std() + eps)
-        data["ratio"] = ratio
-        return data
-
     def get_train_transforms():
         return Compose([
-            LoadImaged(keys=["t1w", "t2w"]),
-            EnsureChannelFirstd(keys=["t1w", "t2w"]),
-            Orientationd(keys=["t1w", "t2w"], axcodes="RAS"),
-            Spacingd(keys=["t1w", "t2w"], pixdim=TARGET_VOXEL, mode="bilinear"),
+            LoadImaged(keys=["t1w", "t2w", "mask"]),
+            EnsureChannelFirstd(keys=["t1w", "t2w", "mask"]),
+            Orientationd(keys=["t1w", "t2w", "mask"], axcodes="RAS"),
+            MaskIntensityd(keys=["t1w", "t2w"], mask_key="mask"),
             CropForegroundd(keys=["t1w", "t2w"], source_key="t1w"),
             NormalizeIntensityd(keys=["t1w", "t2w"], nonzero=True, channel_wise=True),
             SpatialPadd(keys=["t1w", "t2w"], spatial_size=PATCH_SIZE),
             RandSpatialCropd(keys=["t1w", "t2w"], roi_size=PATCH_SIZE, random_size=False),
-            RandFlipd(keys=["t1w", "t2w"], prob=0.5, spatial_axis=0),
-            RandRotate90d(keys=["t1w", "t2w"], prob=0.3, max_k=3),
-            RandAffined(keys=["t1w", "t2w"], prob=0.3,
-                        rotate_range=(0.1, 0.1, 0.1), scale_range=(0.05, 0.05, 0.05),
-                        translate_range=(5, 5, 5), mode="bilinear", padding_mode="border"),
-            RandGaussianNoised(keys=["t1w", "t2w"], prob=0.2, std=0.05),
-            RandGaussianSmoothd(keys=["t1w", "t2w"], prob=0.2,
-                                sigma_x=(0.5, 1.0), sigma_y=(0.5, 1.0), sigma_z=(0.5, 1.0)),
-            RandScaleIntensityd(keys=["t1w", "t2w"], prob=0.3, factors=0.1),
-            RandCoarseDropoutd(keys=["t1w", "t2w"], prob=0.2,
-                               holes=3, spatial_size=(16, 16, 16), fill_value=0),
-            _compute_ratio,
-            ConcatItemsd(keys=["t1w", "t2w", "ratio"], name="image"),
-            DeleteItemsd(keys=["t1w", "t2w", "ratio"]),
+            ConcatItemsd(keys=["t1w", "t2w"], name="image"),
+            DeleteItemsd(keys=["t1w", "t2w"]),
             ToTensord(keys=["image"]),
         ])
 
     def get_val_transforms():
         return Compose([
-            LoadImaged(keys=["t1w", "t2w"]),
-            EnsureChannelFirstd(keys=["t1w", "t2w"]),
-            Orientationd(keys=["t1w", "t2w"], axcodes="RAS"),
-            Spacingd(keys=["t1w", "t2w"], pixdim=TARGET_VOXEL, mode="bilinear"),
+            LoadImaged(keys=["t1w", "t2w", "mask"]),
+            EnsureChannelFirstd(keys=["t1w", "t2w", "mask"]),
+            Orientationd(keys=["t1w", "t2w", "mask"], axcodes="RAS"),
+            MaskIntensityd(keys=["t1w", "t2w"], mask_key="mask"),
             CropForegroundd(keys=["t1w", "t2w"], source_key="t1w"),
             NormalizeIntensityd(keys=["t1w", "t2w"], nonzero=True, channel_wise=True),
             SpatialPadd(keys=["t1w", "t2w"], spatial_size=PATCH_SIZE),
             RandSpatialCropd(keys=["t1w", "t2w"], roi_size=PATCH_SIZE,
                              random_size=False, random_center=False),
-            _compute_ratio,
-            ConcatItemsd(keys=["t1w", "t2w", "ratio"], name="image"),
-            DeleteItemsd(keys=["t1w", "t2w", "ratio"]),
+            ConcatItemsd(keys=["t1w", "t2w"], name="image"),
+            DeleteItemsd(keys=["t1w", "t2w"]),
             ToTensord(keys=["image"]),
         ])
 
@@ -324,7 +409,7 @@ def init_ml():
         """Return a transform that generates random 3-channel tensors (no NIfTI needed).
         Uses small volumes for fast CPU testing."""
         def _synth_transform(data):
-            return {"image": torch.randn(3, size, size, size)}
+            return {"image": torch.randn(2, size, size, size)}
         return _synth_transform
 
     _m.get_synthetic_transforms = get_synthetic_transforms
@@ -343,6 +428,12 @@ def init_ml():
         def __len__(self):
             return len(self.df)
 
+        def _build_data_dict(self, row):
+            d = {"t1w": row["t1w_path"], "t2w": row["t2w_path"]}
+            if "mask_path" in row and pd.notna(row.get("mask_path")):
+                d["mask"] = row["mask_path"]
+            return d
+
         def __getitem__(self, idx):
             row = self.df.iloc[idx]
             label = torch.tensor(float(row["label"]), dtype=torch.float32)
@@ -354,11 +445,11 @@ def init_ml():
                         return torch.load(cache_path, weights_only=False), label, idx
                     except Exception:
                         cache_path.unlink(missing_ok=True)
-                data = self.transform({"t1w": row["t1w_path"], "t2w": row["t2w_path"]})
+                data = self.transform(self._build_data_dict(row))
                 image = data["image"]
                 torch.save(image, cache_path)
                 return image, label, idx
-            data = self.transform({"t1w": row.get("t1w_path", ""), "t2w": row.get("t2w_path", "")})
+            data = self.transform(self._build_data_dict(row))
             if isinstance(data, dict):
                 return data["image"], label, idx
             return data, label, idx
@@ -555,8 +646,9 @@ def cmd_train(args):
     # TensorBoard
     writer = SummaryWriter(log_dir=str(out_dir / "tb_logs")) if SummaryWriter else None
 
-    # Data
+    # Data — auto skull-strip if needed
     df = pd.read_csv(cfg.manifest)
+    df = _ensure_masks(df, cfg.manifest)
     n_pos = int(df["label"].sum())
     print(f"Manifest: {len(df)} rows, {n_pos} WMA+ ({n_pos/len(df)*100:.1f}%)")
 
@@ -642,7 +734,7 @@ def cmd_train(args):
             set_backbone_grad(True)
             layer_groups = model.get_layer_groups()
             n_groups = len(layer_groups)
-            lr_decay = 0.75
+            lr_decay = 0.85
             param_groups = []
             for i, group_params in enumerate(layer_groups):
                 group_lr = cfg.lr * cfg.lr_backbone_factor * (lr_decay ** (n_groups - 1 - i))
@@ -904,6 +996,12 @@ def main():
     p.add_argument("--data_root", required=True); p.add_argument("--labels", required=True)
     p.add_argument("--out", default="data/manifest.csv")
 
+    p = sub.add_parser("skullstrip", help="Offline skull-stripping with SynthStrip")
+    p.add_argument("--manifest", required=True)
+    p.add_argument("--out_dir", default=None, help="Output dir for masks (default: next to T1w)")
+    p.add_argument("--bind", default="/mnt/fac", help="Apptainer bind paths")
+    p.add_argument("--n_jobs", type=int, default=4)
+
     p = sub.add_parser("train", help="Train (2-stage CE->APLoss) with SwinUNETR")
     p.add_argument("--manifest", default="data/manifest.csv")
     p.add_argument("--out_dir", default="runs/wma_swin")
@@ -917,7 +1015,7 @@ def main():
     p.add_argument("--dropout", type=float, default=0.4)
     p.add_argument("--fold", type=int, default=0)
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--freeze_epochs", type=int, default=5)
+    p.add_argument("--freeze_epochs", type=int, default=10)
     p.add_argument("--weight_decay", type=float, default=5e-4)
     p.add_argument("--aploss_gamma", type=float, default=0.9)
     p.add_argument("--epoch_decay", type=float, default=1e-3)
@@ -943,6 +1041,8 @@ def main():
         cmd_labels(args)
     elif args.command == "manifest":
         cmd_manifest(args)
+    elif args.command == "skullstrip":
+        cmd_skullstrip(args)
     elif args.command == "train":
         cmd_train(args)
     elif args.command == "eval":
