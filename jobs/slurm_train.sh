@@ -1,17 +1,17 @@
 #!/bin/bash
 #SBATCH --job-name=wma_train
 #SBATCH --partition=gpu
-#SBATCH --gres=gpu:nvidia_h100_nvl:1
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=96G
 #SBATCH --time=24:00:00
-#SBATCH --output=logs/wma_train_%A_%a.out
-#SBATCH --error=logs/wma_train_%A_%a.err
-# For multi-fold: #SBATCH --array=0-4
+#SBATCH --output=/mnt/scratch/user/lbardou/wma_logs/wma_train_%A_%a.out
+#SBATCH --error=/mnt/scratch/user/lbardou/wma_logs/wma_train_%A_%a.err
+#SBATCH --array=0-4
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="/mnt/fac/CX500007_DS1/bardou/wma-pipeline"
 source "$SCRIPT_DIR/activate_env.sh"
 
 mkdir -p "$WMA_RUNS" "$WMA_CACHE" "$WMA_LOGS"
@@ -31,20 +31,10 @@ echo "Node: $(hostname)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
 echo "============================================"
 
-# Build labels if needed
-if [ ! -f "$SCRIPT_DIR/data/labels_wma.csv" ]; then
-    python "$SCRIPT_DIR/wma_pipeline.py" labels \
-        --csv1 "$SCRIPT_DIR/data/abcd_combined_from-2025-10-15.csv" \
-        --csv2 "$SCRIPT_DIR/data/all_labels_merged.csv" \
-        --out "$SCRIPT_DIR/data/labels_wma.csv"
-fi
-
-# Build manifest if needed
+# manifest.csv is pre-built in data/
 if [ ! -f "$MANIFEST" ]; then
-    python "$SCRIPT_DIR/wma_pipeline.py" manifest \
-        --data_root "$ABCD_IMAGING" \
-        --labels "$SCRIPT_DIR/data/labels_wma.csv" \
-        --out "$MANIFEST"
+    echo "ERROR: manifest.csv not found at $MANIFEST" >&2
+    exit 1
 fi
 
 # Train
